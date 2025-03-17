@@ -1,6 +1,9 @@
 [package]
-name = "rs-int"
+name = "rs-interpreter"
 version = "0.1.0"
 edition = "2024"
+authors = ["Tom Webber"]
+license = "MIT or Apache-2.0"
 
 [dependencies]
+clinput = { git = "https://github.com/t-webber/clinput.git" }
