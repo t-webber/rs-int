@@ -23,6 +23,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "clinput"
 version = "0.1.0"
+source = "git+https://github.com/t-webber/clinput#bfb114f960322920e076a6ebe04c754652b2c576"
 dependencies = [
  "crossterm",
 ]

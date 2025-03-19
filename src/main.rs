@@ -97,7 +97,10 @@ fn main() {
         }
         line => {
             stdout().flush().unwrap();
-            lines.push(line.to_owned());
+            let mut owned_line = String::with_capacity(line.len() + 1);
+            owned_line.push(';');
+            owned_line.push_str(line);
+            lines.push(owned_line);
             if let Err(msg) = interpret_code(code(&lines)) {
                 println_raw(msg);
             }

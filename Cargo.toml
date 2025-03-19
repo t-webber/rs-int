@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Tom Webber"]
 license = "MIT or Apache-2.0"
+repository = "https://github.com/t-webber/rs-int"
 
 [dependencies]
-clinput = { path = "../clinput" }
+clinput = { git = "https://github.com/t-webber/clinput" }
