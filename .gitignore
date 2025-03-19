@@ -1,2 +1,5 @@
 target/
 .*/
+file
+file.rs
+logs.txt

@@ -1,100 +1,111 @@
+use clinput::{self, App};
+use std::fs;
+use std::io::{Read, Write as _, stdout};
+use std::process::Stdio;
 use std::{
-    fs::{remove_file, write},
-    io::{Write as _, stdin, stdout},
-    process::{Command, ExitStatus, Stdio},
+    fs::{OpenOptions, remove_file},
+    process::Command,
 };
 
-const FILE_PATH: &str = "file.rs";
-const OUTPUT_PATH: &str = "./file";
-const RUST_C: &str = "rustc";
-
-macro_rules! err_and_fail {
-    ($code:expr, $msg:expr) => {{
-        match $code {
-            Err(_) => fail!($msg),
-            Ok(val) => val,
-        }
-    }};
-}
-
-macro_rules! fail {
-    ($msg:expr) => {{
-        eprintln!($msg);
-        continue;
-    }};
-}
-
-macro_rules! err_unit {
-    ($code:expr) => {{ $code.map_err(|_| ()) }};
-}
-
-fn flush() {
-    stdout()
-        .flush()
-        .unwrap_or_else(|_| eprintln!("Failed to flush."));
-}
-
-fn process(cmd: &mut Command) -> Result<ExitStatus, ()> {
-    err_unit!(cmd.spawn()).and_then(|mut ps| err_unit!(ps.wait()))
-}
-
-fn code(lines: &[Box<str>]) -> String {
+fn code(lines: &Vec<String>) -> String {
     let mut code = String::new();
     for line in lines {
         code.push_str(line);
+        code.push('\n');
     }
     format!(
-        r##"
+        "
 #![allow(unused)]
 
 fn main() {{
-let x = {{{code}}};
-println!("{{x:?}}");
+let x = {{\n{code}\n}};
+println!(\"{{x:?}}\");
 }}
-"##
+"
     )
 }
 
-fn clean() {
-    remove_file(FILE_PATH).expect("Access denied.");
-    remove_file(OUTPUT_PATH).expect("Access denied.");
+fn println_raw(msg: &str) {
+    println!("\r{msg}");
+}
+
+const SRC_PATH: &str = "file.rs";
+const OUT_PATH: &str = "./file";
+const LOG_PATH: &str = "logs.txt";
+
+const RUST_C: &str = "rustc";
+
+/// Removes the created files if they exist
+fn clean(lines: &mut Vec<String>) {
+    lines.clear();
+    remove_file(SRC_PATH).unwrap_or_default();
+    remove_file(OUT_PATH).unwrap_or_default();
+    remove_file(LOG_PATH).unwrap_or_default();
+}
+
+fn interpret_code(code: String) -> Result<(), &'static str> {
+    fs::write(SRC_PATH, code).map_err(|_| "Access denied.")?;
+    let mut errors = String::new();
+
+    Command::new(RUST_C)
+        .args([SRC_PATH])
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| "Failed to compile.")?
+        .stderr
+        .ok_or("Failed to fetch stderr.")?
+        .read_to_string(&mut errors)
+        .map_err(|_| "Failed to fetch errors.")?;
+
+    let fixed_errors = errors.replace("\n", "\r\n");
+    let trimmed_errors = fixed_errors.trim();
+    if !trimmed_errors.is_empty() {
+        println_raw(trimmed_errors);
+        return Err("Compilation failed.");
+    }
+
+    if Command::new(OUT_PATH)
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|_| "Failed to execute.")?
+        .wait()
+        .map_err(|_| "Failed to end execution.")?
+        .success()
+    {
+        Ok(())
+    } else {
+        Err("Execution failed")
+    }
 }
 
 fn main() {
-    let mut file = Vec::<Box<str>>::new();
-    loop {
-        let mut line = String::new();
-        print!(">>> ");
-        flush();
-        err_and_fail!(stdin().read_line(&mut line), "Failed to read line.");
-        match line.as_str().trim() {
-            "clear" | "c" => {
-                clean();
-                continue;
+    let mut log = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(LOG_PATH)
+        .unwrap();
+
+    let mut lines = Vec::new();
+
+    let mut app = App::new();
+    app.action(|app| match app.line() {
+        "clear" | "c" => {
+            clean(&mut lines);
+        }
+        "exit" | "e" => {
+            app.exit();
+        }
+        line => {
+            stdout().flush().unwrap();
+            lines.push(line.to_owned());
+            if let Err(msg) = interpret_code(code(&lines)) {
+                println_raw(msg);
             }
-            "exit" | "e" => break,
-            _ => file.push(line.into_boxed_str()),
+            stdout().flush().unwrap();
         }
-        err_and_fail!(write(FILE_PATH, code(&file)), "Access denied");
-        if !err_and_fail!(
-            process(Command::new(RUST_C).args([FILE_PATH])),
-            "Failed to execute."
-        )
-        .success()
-        {
-            file.pop();
-            fail!("Invalid code. Try again");
-        }
-        if !err_and_fail!(
-            process(Command::new(OUTPUT_PATH).stdin(Stdio::piped())),
-            "Failed to execute."
-        )
-        .success()
-        {
-            file.pop();
-            fail!("Invalid code. Try again.");
-        }
-        flush();
-    }
-    clean();
+    });
+    app.log(|info| writeln!(log, "{info}").unwrap());
+
+    app.run();
+    clean(&mut lines);
 }
