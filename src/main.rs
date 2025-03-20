@@ -1,6 +1,7 @@
 use clinput::{self, App};
 use std::fs;
 use std::io::{Read, Write as _, stdout};
+use std::mem::take;
 use std::process::Stdio;
 use std::{
     fs::{OpenOptions, remove_file},
@@ -86,6 +87,7 @@ fn main() {
         .unwrap();
 
     let mut lines = Vec::new();
+    let mut unfinished_line: Option<String> = None;
 
     let mut app = App::new();
     app.action(|app| match app.line() {
@@ -97,11 +99,27 @@ fn main() {
         }
         line => {
             stdout().flush().unwrap();
-            let mut owned_line = String::with_capacity(line.len() + 1);
-            owned_line.push(';');
-            owned_line.push_str(line);
-            lines.push(owned_line);
+            let line = line.trim();
+            let mut newline = match take(&mut unfinished_line) {
+                Some(mut newline) => {
+                    newline.reserve(line.len());
+                    newline
+                }
+                None => {
+                    let mut newline = String::with_capacity(1 + line.len());
+                    newline.push(';');
+                    newline
+                }
+            };
+            newline.push_str(line);
+            if line.ends_with('\\') {
+                newline.pop();
+                unfinished_line = Some(newline);
+                return;
+            }
+            lines.push(newline);
             if let Err(msg) = interpret_code(code(&lines)) {
+                lines.pop();
                 println_raw(msg);
             }
             stdout().flush().unwrap();
